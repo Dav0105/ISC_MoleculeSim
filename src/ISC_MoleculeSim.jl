@@ -22,8 +22,9 @@ mutable struct Molecule
 end
 
 """Compute next position."""
-function computeNextPosition(m::Molecule, dt::Number)
+function computeNextPosition(m::Molecule, dt::Number)::Vector
     m.position = m.position .+ (m.speed * dt)
+    return m.position
 end
 
 """Compute all positions for a molecule until provided time."""
@@ -38,21 +39,41 @@ function computePositions(m::Molecule, dt::Number, until::Number)::Vector
     return pos
 end
 
+function detectCollision(m1::Molecule, m2::Molecule)::Bool
+    r = m1.radius + m2.radius
+    println(m1.radius)
+    x1, y1, z1 = m1.position
+    x2, y2, z2 = m2.position
+    dist = sqrt((x2 - x1)^2 + (y2 - y1)^2 + (z2 - z1)^2)
+
+    return (dist <= r)
+end
+
 function main()
     """
     Mass of Molecules :
     Helium (He) = 4,002 602 ± 0,000 002 u
     Néon (Ne) = 20,179 7 ± 0,000 6 u
-    Azote (N) = 14,006 7 ± 0,000 2 uMolecule
+    Azote (N) = 14,006 7 ± 0,000 2 u
     Diazote (N^2) = 2 * N
     Oxygène (O) = 15,999 4 ± 0,000 3 u
-    Dioxygène (O^2) = 2 * O
+    Dioxygène (O^2) = 2 * O  
+
+    Atomic Radius :  
+    Helium (He) = 128 pm
+    Néon (Ne) = 38 pm
+    Diazote (N^2) = 0,315 nm / 2
+    Dioxygène (O^2) = 0,292 nm / 2
+    (picomètre = 1 * 10^-12 mètres
+     nanomètre = 1 * 10^-9 mètres)
     """
     u = 1.660_538_921 * (10^-27) # [kg]
-    mHe  = Molecule("He", 4.002_602 * u      , 0, [0, 0, 0], [0.001, 0, 0])
-    mNe  = Molecule("Ne", 20.179_70 * u      , 0, [0, 0, 0], [0, 0, 0.001])
-    mN_2 = Molecule("N2", 14.006_70 * 2 * u  , 0, [0, 0, 0], [0, 0, 0.001])
-    mO_2 = Molecule("O2", 15.999_40 * 2 * u  , 0, [0, 0, 0], [0, 0, 0.001])
+    pico = 10^-12
+    nano = 10^-9
+    mHe  = Molecule("He", 4.002_602 * u      , 123 * pico        , [0, 0, 0], [0.001, 0, 0])
+    mNe  = Molecule("Ne", 20.179_70 * u      , 38  * pico        , [0, 0, 0], [0, 0, 0.001])
+    mN_2 = Molecule("N2", 14.006_70 * 2 * u  , (0.315 / 2) * nano, [0, 0, 0], [0, 0, 0.001])
+    mO_2 = Molecule("O2", 15.999_40 * 2 * u  , (0.292 / 2) * nano, [0, 0, 0], [0, 0, 0.001])
 
     # Molecules to add to simulation
     molecules::Array = [mHe, mNe]
@@ -100,9 +121,7 @@ function main()
         T[] = timestamps[f]
 
         # Update scatter with current positions
-        xs = []
-        ys = []
-        zs = []
+        xs = []; ys = []; zs = []
         for (i, m) in enumerate(molecules)
             x, y, z = pos_hist[i][f]
             push!(xs, x)
