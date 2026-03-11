@@ -3,7 +3,7 @@ module ISC_MoleculeSim
 using GLMakie, LinearAlgebra, Makie
 
 """
-Struct used to store Molecule properties
+Struct used to store Molecule properties  
 `mass` = kg  
 `radius` = m  
 `chemicalFormula` = String  
@@ -19,6 +19,18 @@ mutable struct Molecule
 
     position::Vector
     speed::Vector       # m/s
+end
+
+"""Represents the volume where the molecules will be."""
+struct Domain
+    l_x::Number # m
+    l_y::Number # m
+    l_z::Number # m
+end
+
+"""Returns the volume of the provided domain in m³."""
+function getDomainVolume(d::Domain)::Number
+    return d.l_x * d.l_y * d.l_z
 end
 
 """Computes the Movement of a molecule with delta_time provided."""
@@ -38,9 +50,9 @@ function computeCollisionVelocity(m1::Molecule, m2::Molecule)
     m2.speed = v2
 end
 
-"""Checks if there are any collisions with provided molecules and 
-    corrects the speed of molecules if there is collision."""
-function computeCollisions(mols::Array{Molecule})
+"""Checks if there are any collisions with provided molecules 
+    and corrects the speed of molecules if there is collision."""
+function computeMolsCollisions(mols::Array{Molecule})
     # Check collisions for this molecule with others
     for i in 1:length(mols)
         collides_with = nothing
@@ -48,7 +60,7 @@ function computeCollisions(mols::Array{Molecule})
         for j in (i+1):length(mols)
             o_m = mols[j]
 
-            if (detectCollision(m, o_m))
+            if (detectMolsCollision(m, o_m))
                 # Collision detected
                 collides_with = o_m
                 break
@@ -62,8 +74,29 @@ function computeCollisions(mols::Array{Molecule})
     end
 end
 
+"""Checks collisions between walls and provided molecules and corrects their
+    velocity if needed"""
+function checkWallCollisions(d::Domain, mols::Array{Molecule})::Nothing
+    for m in mols
+        mx, my, mz = m.position
+        dlx = d.l_x / 2
+        dly = d.l_y / 2
+        dlz = d.l_z / 2
+        
+        if (mx < -dlx) || (mx > dlx)
+            m.speed[1] = -m.speed[1]
+        end
+        if (my < -dly) || (my > dly)
+            m.speed[2] = -m.speed[2]
+        end
+        if (mz < -dlz) || (mz > dlz)
+            m.speed[3] = -m.speed[3]
+        end
+    end
+end
+
 """Compute all positions for all molecules until provided time."""
-function computePositions(mols::Array{Molecule}, dt::Number, until::Number)::Vector
+function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number)::Vector
     pos::Vector{Vector} = []
 
     # Create new array for molecule if doesn't exist
@@ -72,21 +105,24 @@ function computePositions(mols::Array{Molecule}, dt::Number, until::Number)::Vec
     end
 
     for t in 0:dt:until
+        # Check Collisions between molecules and walls
+        checkWallCollisions(domain, mols)
+
         # Compute movement
         for (idx, m) in enumerate(mols)
             newPos = computeMovement(m, dt)
             push!(pos[idx], newPos)   # current_m += newPos
         end
 
-        # Check Collisions
-        computeCollisions(mols)
+        # Check Collisions between molecules
+        computeMolsCollisions(mols)
     end
 
     return pos
 end
 
 """Returns True if m1 overlaps m2."""
-function detectCollision(m1::Molecule, m2::Molecule)::Bool
+function detectMolsCollision(m1::Molecule, m2::Molecule)::Bool
     if (m1 == m2) return false end
 
     r = m1.radius + m2.radius
@@ -121,11 +157,20 @@ function main()
     # mN_2 = Molecule("N2", 14.006_70 * 2 * u  , (0.315 / 2) * nano, [0, 0, 0], [0, 0, 0.001])
     # mO_2 = Molecule("O2", 15.999_40 * 2 * u  , (0.292 / 2) * nano, [0, 0, 0], [0, 0, 0.001])
 
-    mHe  = Molecule("He", 1, 0.5, [0, 0, -4], [0, 0, 2])
-    mNe  = Molecule("Ne", 1, 0.5, [0, 0, 4], [0, 0, -3])
+    # mHe  = Molecule("He", 1, 0.5, [0, 0, -4], [0, 0, 2])
+    # mNe  = Molecule("Ne", 1, 0.5, [0, 0, 4], [0, 0, -3])
+
+    mHe  = Molecule("He", 1, 0.5, [0, 0, -8], [0, 0, -2])
+    mNe  = Molecule("Ne", 1, 0.5, [0, -4, 5], [0, -4, 4])
+    mNe2 = Molecule("Ne", 1, 0.5, [0, 0, 4], [0, 0, 4])
+    mNe3 = Molecule("Ne", 1, 0.5, [1, 2, 4], [20, 15, 2])
 
     # Molecules to add to simulation
-    molecules::Array{Molecule} = [mHe, mNe]
+    molecules::Array{Molecule} = [mHe, mNe, mNe2, mNe3]
+
+    # Domain
+    domain::Domain = Domain(20, 20, 20)
+    println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
 
     # Time settings
     delta_t::Number = 0.001
@@ -146,13 +191,13 @@ function main()
         mol1: [10.0, 1.4],
         mol2: [13.2, 4.5]
     ]"""
-    pos_hist::Vector{Vector} = computePositions(molecules, delta_t, until)
+    pos_hist::Vector{Vector} = computePositions(molecules, domain, delta_t, until)
 
     # Prepare figure
     fig = Figure(size = (800, 600))
-    xlims = (-10, 10)
-    ylims = (-10, 10)
-    zlims = (-10, 10)
+    xlims = (-domain.l_x/2, domain.l_x/2)
+    ylims = (-domain.l_y/2, domain.l_y/2)
+    zlims = (-domain.l_z/2, domain.l_z/2)
 
     ax = Axis3(
         fig[1, 1], 
