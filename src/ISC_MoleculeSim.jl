@@ -29,53 +29,57 @@ end
 
 """Function called when there is a collision. """
 function computeCollisionVelocity(m1::Molecule, m2::Molecule)
-    n::Vector = (m1.position .- m2.position) / norm(m1.position .- m2.position)
-    v1::Vector = m1.speed .- ((2 * m2.mass) / (m1.mass + m2.mass)) .* ((m1.speed .- m2.speed) .* n) .* n
-    v2::Vector = m2.speed .+ ((2 * m1.mass) / (m1.mass + m2.mass)) .* ((m1.speed .- m2.speed) .* n) .* n
+    n::Vector = (m1.position .- m2.position) / sqrt(sum((m1.position .- m2.position).^2))
+    # dot() = Produit Scalaire
+    v1::Vector = m1.speed .- ((2 * m2.mass) / (m1.mass + m2.mass)) * dot((m1.speed .- m2.speed), n) .* n
+    v2::Vector = m2.speed .+ ((2 * m1.mass) / (m1.mass + m2.mass)) * dot((m1.speed .- m2.speed), n) .* n
 
     m1.speed = v1
     m2.speed = v2
 end
 
-"""Compute next position for all molecules."""
-function computeNextPosition(m::Molecule, mols::Array{Molecule}, dt::Number)::Vector
-    # m.position = m.position .+ (m.speed * dt)
-    # return m.position
-
+"""Checks if there are any collisions with provided molecules and 
+    corrects the speed of molecules if there is collision."""
+function computeCollisions(mols::Array{Molecule})
     # Check collisions for this molecule with others
-    collides_with = Nothing
-    for o_m::Molecule in mols
-        if (m == o_m) 
-            break
+    for i in 1:length(mols)
+        collides_with = nothing
+        m = mols[i]
+        for j in (i+1):length(mols)
+            o_m = mols[j]
+
+            if (detectCollision(m, o_m))
+                # Collision detected
+                collides_with = o_m
+                break
+            end
         end
 
-        if (detectCollision(m, o_m))
-            # Collision detected
-            collides_with = o_m
-            break
+        if (collides_with !== nothing)
+            # println("COLLISION DETECTED!!?!?!? $(m.chemicalFormula) => $(collides_with.chemicalFormula)")
+            computeCollisionVelocity(m, collides_with)
         end
     end
-
-    if (collides_with != Nothing)
-        println("COLLISION DETECTED!!?!?!??!??!?!?!?!?!?!?")
-        computeCollisionVelocity(m, collides_with)
-    end
-    computeMovement(m, dt)
-
-    return m.position
 end
 
 """Compute all positions for all molecules until provided time."""
 function computePositions(mols::Array{Molecule}, dt::Number, until::Number)::Vector
-    pos::Vector = []
+    pos::Vector{Vector} = []
 
-    for m in mols
-        m_pos::Vector = []
-        for i in 0:dt:until
-            newPos = computeNextPosition(m, mols, dt)
-            push!(m_pos, newPos)
+    # Create new array for molecule if doesn't exist
+    for _ in 1:length(mols)
+        push!(pos, [])
+    end
+
+    for t in 0:dt:until
+        # Compute movement
+        for (idx, m) in enumerate(mols)
+            newPos = computeMovement(m, dt)
+            push!(pos[idx], newPos)   # current_m += newPos
         end
-        push!(pos, m_pos)
+
+        # Check Collisions
+        computeCollisions(mols)
     end
 
     return pos
@@ -83,10 +87,10 @@ end
 
 """Returns True if m1 overlaps m2."""
 function detectCollision(m1::Molecule, m2::Molecule)::Bool
+    if (m1 == m2) return false end
+
     r = m1.radius + m2.radius
-    x1, y1, z1 = m1.position 
-    x2, y2, z2 = m2.position
-    dist = sqrt((x2 - x1)^2 + (y2 - y1)^2 + (z2 - z1)^2)
+    dist = sqrt(sum((m1.position .- m2.position).^2))
 
     return (dist <= r)
 end
@@ -117,8 +121,8 @@ function main()
     # mN_2 = Molecule("N2", 14.006_70 * 2 * u  , (0.315 / 2) * nano, [0, 0, 0], [0, 0, 0.001])
     # mO_2 = Molecule("O2", 15.999_40 * 2 * u  , (0.292 / 2) * nano, [0, 0, 0], [0, 0, 0.001])
 
-    mHe  = Molecule("He", 4.002_602 * u, 1, [0, 0, -5], [0, 0, 2])
-    mNe  = Molecule("Ne", 20.179_70 * u, 1, [0, 0, 5], [0, 0, -2])
+    mHe  = Molecule("He", 1, 0.5, [0, 0, -4], [0, 0, 2])
+    mNe  = Molecule("Ne", 1, 0.5, [0, 0, 4], [0, 0, -3])
 
     # Molecules to add to simulation
     molecules::Array{Molecule} = [mHe, mNe]
@@ -138,15 +142,11 @@ function main()
     T = Observable(0.0)
 
     # Compute all positions for all molecules
-    # pos_hist::Array{Array} = []
-    # for m in molecules
-    #     push!(pos_hist, computePositions(m, delta_t, until))
-    # end
     """ pos_hist = [
         mol1: [10.0, 1.4],
         mol2: [13.2, 4.5]
     ]"""
-    pos_hist::Vector = computePositions(molecules, delta_t, until)
+    pos_hist::Vector{Vector} = computePositions(molecules, delta_t, until)
 
     # Prepare figure
     fig = Figure(size = (800, 600))
