@@ -131,7 +131,67 @@ function detectMolsCollision(m1::Molecule, m2::Molecule)::Bool
     return (dist <= r)
 end
 
-function main()
+"""Generate simulation with provided settings and outputs it to `./out` folder."""
+function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int)::Nothing
+    output_path = "out/animation.mp4"
+    
+    println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
+
+    timestamps = 0:delta_t:until
+    total_frames = length(timestamps)
+
+    # Observable indicating current frame being generated
+    # (Used in the record section)
+    frame = Observable(1)
+    # Observable containing time info
+    T = Observable(0.0)
+
+    # Compute all positions for all molecules
+    """ pos_hist = [
+        mol1: [10.0, 1.4],
+        mol2: [13.2, 4.5]
+    ]"""
+    pos_hist::Vector{Vector} = computePositions(mols, domain, delta_t, until)
+
+    # Prepare figure
+    fig = Figure(size = (800, 600))
+    xlims = (-domain.l_x/2, domain.l_x/2)
+    ylims = (-domain.l_y/2, domain.l_y/2)
+    zlims = (-domain.l_z/2, domain.l_z/2)
+
+    ax = Axis3(
+        fig[1, 1], 
+        # perspectiveness = 0.5,
+        aspect = (1, 1, 1), 
+        title = @lift("T = $($T) sec."),
+        limits=(xlims, ylims, zlims),
+        azimuth = 0.3 * pi
+    )
+
+    xs, ys, zs = pos_hist[1]
+    scatter_plot = scatter!(ax, xs, ys, zs, color=1:20, markersize=10)
+    
+    record(fig, output_path, 1:framerate:total_frames; framerate = framerate) do f
+        frame[] = f
+        T[] = timestamps[f]
+
+        # Update scatter with current positions
+        xs = []; ys = []; zs = []
+        for (i, m) in enumerate(mols) # foreach molecule
+            x, y, z = pos_hist[i][f]
+            push!(xs, x)
+            push!(ys, y)
+            push!(zs, z)
+        end
+        scatter_plot[1] = xs  # xs = [mol1_x, mol2_x, mol3_z] at frame f
+        scatter_plot[2] = ys  # y
+        scatter_plot[3] = zs  # z
+    end
+
+    println("Video saved in " * output_path * " ! :)")
+end
+
+function main_test()
     """
     Mass of Molecules :
     Helium (He) = 4,002 602 ± 0,000 002 u
@@ -170,66 +230,57 @@ function main()
 
     # Domain
     domain::Domain = Domain(20, 20, 20)
-    println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
 
     # Time settings
     delta_t::Number = 0.001
     until::Number = 3
     framerate = 30
 
-    timestamps = 0:delta_t:until
-    total_frames = length(timestamps)
-
-    # Observable indicating current frame being generated
-    # (Used in the record section)
-    frame = Observable(1)
-    # Observable containing time info
-    T = Observable(0.0)
-
-    # Compute all positions for all molecules
-    """ pos_hist = [
-        mol1: [10.0, 1.4],
-        mol2: [13.2, 4.5]
-    ]"""
-    pos_hist::Vector{Vector} = computePositions(molecules, domain, delta_t, until)
-
-    # Prepare figure
-    fig = Figure(size = (800, 600))
-    xlims = (-domain.l_x/2, domain.l_x/2)
-    ylims = (-domain.l_y/2, domain.l_y/2)
-    zlims = (-domain.l_z/2, domain.l_z/2)
-
-    ax = Axis3(
-        fig[1, 1], 
-        # perspectiveness = 0.5,
-        aspect = (1, 1, 1), 
-        title = @lift("T = $(round($T, digits=3)) sec."),
-        limits=(xlims, ylims, zlims),
-        azimuth = 0.3 * pi
-    )
-
-    xs, ys, zs = pos_hist[1]
-    scatter_plot = scatter!(ax, xs, ys, zs, color=1:20, markersize=10)
-    
-    record(fig, "out/animation.mp4", 1:framerate:total_frames; framerate = framerate) do f
-        frame[] = f
-        T[] = timestamps[f]
-
-        # Update scatter with current positions
-        xs = []; ys = []; zs = []
-        for (i, m) in enumerate(molecules) # foreach molecule
-            x, y, z = pos_hist[i][f]
-            push!(xs, x)
-            push!(ys, y)
-            push!(zs, z)
-        end
-        scatter_plot[1] = xs  # xs = [mol1_x, mol2_x, mol3_z] at frame f
-        scatter_plot[2] = ys  # y
-        scatter_plot[3] = zs  # z
-    end
+    generateSimulation(domain, molecules, delta_t, until, framerate)
 
 end
 
-main()
+function main_helium()
+    # Time settings
+    delta_t::Number = 1 *10^-14
+    until::Number = 2 *10^-11
+    framerate = 30
+
+    # Domain settings
+    nano = 10^-9
+    size = 10 * nano
+    domain::Domain = Domain(size, size, size)
+
+    # Molecules
+    num_mols = 400
+    molecules::Array{Molecule} = []
+    init_speed = 1400 # m/s
+    for i in 1:num_mols
+        pos::Vector = [
+            rand(-1:0.1:1) * domain.l_x/2,
+            rand(-1:0.1:1) * domain.l_y/2,
+            rand(-1:0.1:1) * domain.l_z/2
+        ]
+
+        rand_vect::Vector = randn(3)
+        rand_vect = normalize(rand_vect)
+
+        speed::Vector = rand_vect .* init_speed
+
+        mHe = Molecule(
+            "He",               # Chemical formula
+            6.646 * 10^-27,     # Mass
+            1.1 * 10^-10,       # Radius
+            pos,                # Position
+            speed               # Speed
+        )
+        push!(molecules, mHe)
+    end
+
+    # GENERATE THE AWESOME SIMULATION
+    generateSimulation(domain, molecules, delta_t, until, framerate)
+end
+
+main_helium()
 
 end # module ISC_MoleculeSim
