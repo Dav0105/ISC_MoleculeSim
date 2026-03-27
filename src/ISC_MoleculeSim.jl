@@ -139,9 +139,7 @@ function detectMolsCollision(m1::Molecule, m2::Molecule)::Bool
 end
 
 """Generate simulation with provided settings and outputs it to `./out` folder."""
-function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int, exportToCSV::Bool = true)::Nothing
-    output_path = "out/animation.mp4"
-    
+function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int, exportToCSV::Bool = true, output_path::String = "./out/animation")::Nothing    
     println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
 
     timestamps = 0:delta_t:until
@@ -179,7 +177,7 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
     xs, ys, zs = pos_hist[1]
     scatter_plot = scatter!(ax, xs, ys, zs, color=1:20, markersize=10)
     
-    record(fig, output_path, 1:framerate:total_frames; framerate = framerate) do f
+    record(fig, output_path * ".mp4", 1:framerate:total_frames; framerate = framerate) do f
         frame[] = f
         T[] = timestamps[f]
 
@@ -197,7 +195,13 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
     end
 
     if (exportToCSV)
-        CSV.write("out/output.csv", pos_hist)
+        # CSV Structure :
+        # frame, speed_x, speed_y, speed_z, pos_x, pos_y, pos_z
+        # 1, [dataForMol1]
+        # 1, [dataForMol2]
+        # ...
+
+        # CSV.write(output_path * "_speed.csv", df)
 
         # Export settings
         settings = Dict( 
@@ -208,8 +212,7 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
                 "framerate" => framerate
             )
         )
-
-        open("out/output.toml", "w") do io
+        open(output_path * ".toml", "w") do io
             TOML.print(io, settings)
         end
     end
