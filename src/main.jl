@@ -3,6 +3,14 @@ using LinearAlgebra
 
 include("ISC_MoleculeSim.jl")
 
+function generate_random_positions(domain::ISC_MoleculeSim.Domain)
+    return [
+        rand(-1:0.001:1) * domain.l_x/2,
+        rand(-1:0.001:1) * domain.l_y/2,
+        rand(-1:0.001:1) * domain.l_z/2
+    ]
+end
+
 function main_test()
     """
     Mass of Molecules :
@@ -93,4 +101,68 @@ function main_helium()
     ISC_MoleculeSim.generateSimulation(domain, molecules, delta_t, until, framerate)
 end
 
-main_test()
+function main_helium_2()
+    # Time settings
+    delta_t::Number = 1 *10^-14
+    until::Number = 2 * 10^-11
+    framerate = 30
+
+    # Domain settings
+    size = 4 * 10^-8
+    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(size, size, size)
+
+    # g
+    g = -9.81 * 10^13
+
+    # Molecules
+    molecules::Array{ISC_MoleculeSim.Molecule} = []
+
+    ## Helium
+    num_mols_helium = 400
+    init_speed_helium = 789.45 # m/s
+    for i in 1:num_mols_helium
+        pos::Vector = generate_random_positions(domain)
+
+        # Generate random speeds
+        rand_vect::Vector = randn(3)
+        rand_vect = normalize(rand_vect)
+        speed::Vector = rand_vect .* init_speed_helium
+
+        mHe = ISC_MoleculeSim.Molecule(
+            "He",               # Chemical formula
+            6.646 * 10^-27,     # Mass
+            1.1 * 10^-10,       # Radius
+            pos,                # Position
+            speed               # Speed
+        )
+        push!(molecules, mHe)
+    end
+
+    ## Argon
+    num_mols_argon = 200
+    init_speed_argon = 249.88 # m/s
+    for i in 1:num_mols_argon
+        pos::Vector = generate_random_positions(domain)
+
+        # Generate random speeds
+        rand_vect::Vector = randn(3)
+        rand_vect = normalize(rand_vect)
+        speed::Vector = rand_vect .* init_speed_argon
+
+        mAr = ISC_MoleculeSim.Molecule(
+            "Ar",               # Chemical formula
+            6.634 *10^-26,      # Mass
+            1.88 * 10^-10,      # Radius
+            pos,                # Position
+            speed               # Speed
+        )
+        push!(molecules, mAr)
+    end
+
+    # GENERATE THE AWESOME SIMULATION
+    ISC_MoleculeSim.generateSimulation(domain, molecules, delta_t, until, framerate, framestep=30, g=g)
+end
+
+# main_test()
+# main_helium()
+main_helium_2()

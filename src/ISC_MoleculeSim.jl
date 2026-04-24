@@ -35,9 +35,10 @@ function getDomainVolume(d::Domain)::Number
     return d.l_x * d.l_y * d.l_z
 end
 
-"""Computes the Movement of a molecule with delta_time provided."""
-function computeMovement(m::Molecule, dt::Number)
-    m.position = m.position .+ (m.speed * dt)
+"""Computes and applies the Movement of a single molecule with delta_time provided."""
+function computeNextPosition(m::Molecule, dt::Number, g::Number)
+    m.speed = m.speed .+ [0, 0, g * dt]
+    m.position = m.position .+ (m.speed .* dt)
     return m.position
 end
 
@@ -98,9 +99,9 @@ function checkWallCollisions(d::Domain, mols::Array{Molecule})::Nothing
 end
 
 """Compute all positions for all molecules until provided time, and returns an array containing [positions, speeds] for each t."""
-function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number)::Tuple{Vector, Vector}
-    pos::Vector{Vector} = []
-    speed::Vector{Vector} = []
+function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number, g::Number)::Tuple{Array, Array}
+    pos::Array{Vector} = []
+    speed::Array{Vector} = []
 
     # Create new array for molecule if doesn't exist
     for _ in 1:length(mols)
@@ -114,7 +115,7 @@ function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, unt
 
         # Compute movement for each molecule
         for (idx, m) in enumerate(mols)
-            newPos = computeMovement(m, dt)
+            newPos = computeNextPosition(m, dt, g)
             push!(pos[idx], newPos)      # current_m += newPos
             push!(speed[idx], m.speed)   # current_m += newSpeed
         end
@@ -138,8 +139,29 @@ function detectMolsCollision(m1::Molecule, m2::Molecule)::Bool
     return (dist <= r)
 end
 
+"""Displays a Makie graph containing the distributions of positions 
+in Z of the molecules, at the end of the simulation."""
+function generateGravityProbaGraph(pos_hist::Array{Vector}, filename="./out/z_position_dist.png")
+    last_pos_hist = []
+    for mol in pos_hist
+        append!(last_pos_hist, last(mol)[3])
+    end
+    println(last_pos_hist)
+
+    f = Figure()
+    ax = Axis(f[1, 1],
+        title = "Distribution of molecules positions in Z at the end of the simulation",
+        xlabel = "Position in Z",
+        ylabel = "Number of molecules",
+    )
+    hist!(ax, last_pos_hist)
+    save(filename, f)           # Save figure
+    display(f)
+    return
+end
+
 """Generate simulation with provided settings and outputs it to `./out` folder."""
-function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int, exportToCSV::Bool = true, output_path::String = "./out/animation")::Nothing    
+function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; framestep::Int= 30, exportToCSV::Bool = true, output_path::String = "./out/animation", g::Number=-9.81)    
     println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
 
     timestamps = 0:delta_t:until
@@ -151,12 +173,14 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
     # Observable containing time info
     T = Observable(0.0)
 
-    # Compute all positions for all molecules
-    """ pos_hist = [
-        mol1: [10.0, 1.4],
-        mol2: [13.2, 4.5]
-    ]"""
-    (pos_hist::Vector{Vector}, speed_hist::Vector{Vector}) = computePositions(mols, domain, delta_t, until)
+    @time "Time to generate positions" begin
+        # Compute all positions for all molecules
+        """ pos_hist = [
+            mol1: [[x, y, z], [x, y, z]],
+            mol2: [[x, y, z], [x, y, z]]
+        ]"""
+        (pos_hist::Array{Vector}, speed_hist::Array{Vector}) = computePositions(mols, domain, delta_t, until, g)
+    end
 
     # Prepare figure
     fig = Figure(size = (800, 600))
@@ -177,7 +201,7 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
     xs, ys, zs = pos_hist[1]
     scatter_plot = scatter!(ax, xs, ys, zs, color=1:20, markersize=10)
     
-    record(fig, output_path * ".mp4", 1:framerate:total_frames; framerate = framerate) do f
+    @time "Time to generate video" record(fig, output_path * ".mp4", 1:framestep:total_frames; framerate = framerate) do f
         frame[] = f
         T[] = timestamps[f]
 
@@ -194,6 +218,7 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
         scatter_plot[3] = zs  # z
     end
 
+
     if (exportToCSV)
         # CSV Structure :
         # frame, speed_x, speed_y, speed_z, pos_x, pos_y, pos_z
@@ -209,7 +234,8 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
                 "delta_t" => delta_t,
                 "until" => until,
                 "domain" => [domain.l_x, domain.l_y, domain.l_z],
-                "framerate" => framerate
+                "framerate" => framerate,
+                "g" => g
             )
         )
         open(output_path * ".toml", "w") do io
@@ -217,7 +243,13 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
         end
     end
 
+
     println("Video saved in " * output_path * " ! :)")
+
+    generateGravityProbaGraph(pos_hist, output_path * "_z_positions_dist.png")
+
+    display(fig)
+
 end
 
 end # module ISC_MoleculeSim
