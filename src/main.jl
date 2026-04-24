@@ -40,10 +40,10 @@ function main_test()
     # mHe  = Molecule("He", 1, 0.5, [0, 0, -4], [0, 0, 2])
     # mNe  = Molecule("Ne", 1, 0.5, [0, 0, 4], [0, 0, -3])
 
-    mHe  = ISC_MoleculeSim.Molecule("He", 1, 0.5, [0, 0, -8], [0, 0, -2])
-    mNe  = ISC_MoleculeSim.Molecule("Ne", 1, 0.5, [0, -4, 5], [0, -4, 4])
-    mNe2 = ISC_MoleculeSim.Molecule("Ne", 1, 0.5, [0, 0, 4], [0, 0, 4])
-    mNe3 = ISC_MoleculeSim.Molecule("Ne", 1, 0.5, [1, 2, 4], [20, 15, 2])
+    mHe  = ISC_MoleculeSim.Molecule("He", 1, 0.5, [0, 0, -8], [0, 0, -2], [], [])
+    mNe  = ISC_MoleculeSim.Molecule("Ne", 1, 0.5, [0, -4, 5], [0, -4, 4], [], [])
+    mNe2 = ISC_MoleculeSim.Molecule("Ne", 1, 0.5, [0, 0, 4], [0, 0, 4], [], [])
+    mNe3 = ISC_MoleculeSim.Molecule("Ne", 1, 0.5, [1, 2, 4], [20, 15, 2], [], [])
 
     # Molecules to add to simulation
     molecules::Array{ISC_MoleculeSim.Molecule} = [mHe, mNe, mNe2, mNe3]
@@ -52,7 +52,7 @@ function main_test()
     domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(20, 20, 20)
 
     # Time settings
-    delta_t::Number = 0.001
+    delta_t::Number = 0.0001
     until::Number = 3
     framerate = 30
 
@@ -92,7 +92,9 @@ function main_helium()
             6.646 * 10^-27,     # Mass
             1.1 * 10^-10,       # Radius
             pos,                # Position
-            speed               # Speed
+            speed,              # Speed
+            [],                 # pos_hist
+            []                  # speed_hist
         )
         push!(molecules, mHe)
     end
@@ -133,7 +135,9 @@ function main_helium_2()
             6.646 * 10^-27,     # Mass
             1.1 * 10^-10,       # Radius
             pos,                # Position
-            speed               # Speed
+            speed,              # Speed
+            [],                 # pos_hist
+            []                  # speed_hist
         )
         push!(molecules, mHe)
     end
@@ -154,7 +158,9 @@ function main_helium_2()
             6.634 *10^-26,      # Mass
             1.88 * 10^-10,      # Radius
             pos,                # Position
-            speed               # Speed
+            speed,              # Speed
+            [],                 # pos_hist
+            []                  # speed_hist
         )
         push!(molecules, mAr)
     end

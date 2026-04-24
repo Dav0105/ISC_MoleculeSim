@@ -21,6 +21,9 @@ mutable struct Molecule
 
     position::Vector
     speed::Vector       # m/s
+
+    pos_hist::Array{Vector}
+    speed_hist::Array{Vector}
 end
 
 """Represents the volume where the molecules will be."""
@@ -99,34 +102,23 @@ function checkWallCollisions(d::Domain, mols::Array{Molecule})::Nothing
 end
 
 """Compute all positions for all molecules until provided time, and returns an array containing [positions, speeds] for each t."""
-function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number, g::Number)::Tuple{Array, Array}
-    pos::Array{Vector} = []
-    speed::Array{Vector} = []
-
-    # Create new array for molecule if doesn't exist
-    for _ in 1:length(mols)
-        push!(pos, [])
-        push!(speed, [])
-    end
+function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number, g::Number)
 
     for t in 0:dt:until
         # Check Collisions between molecules and walls
         checkWallCollisions(domain, mols)
 
         # Compute movement for each molecule
-        for (idx, m) in enumerate(mols)
+        for m in mols
             newPos = computeNextPosition(m, dt, g)
-            push!(pos[idx], newPos)      # current_m += newPos
-            push!(speed[idx], m.speed)   # current_m += newSpeed
+            push!(m.pos_hist,   newPos)      # current_m += newPos
+            push!(m.speed_hist, m.speed)   # current_m += newSpeed
         end
 
         # Check Collisions between molecules
         computeMolsCollisions(mols)
-
-
     end
 
-    return (pos, speed)
 end
 
 """Returns True if m1 overlaps m2."""
@@ -141,10 +133,10 @@ end
 
 """Displays a Makie graph containing the distributions of positions 
 in Z of the molecules, at the end of the simulation."""
-function generateGravityProbaGraph(pos_hist::Array{Vector}, filename="./out/z_position_dist.png")
+function generateGravityProbaGraph(mols::Array{Molecule}, filename="./out/z_position_dist.png")
     last_pos_hist = []
-    for mol in pos_hist
-        append!(last_pos_hist, last(mol)[3])
+    for mol in mols
+        append!(last_pos_hist, last(mol.pos_hist)[3])
     end
     println(last_pos_hist)
 
@@ -175,11 +167,22 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
 
     @time "Time to generate positions" begin
         # Compute all positions for all molecules
-        """ pos_hist = [
-            mol1: [[x, y, z], [x, y, z]],
-            mol2: [[x, y, z], [x, y, z]]
-        ]"""
-        (pos_hist::Array{Vector}, speed_hist::Array{Vector}) = computePositions(mols, domain, delta_t, until, g)
+        computePositions(mols, domain, delta_t, until, g)
+    end
+
+    # Separate molecules into different arrays by their chemical formula (for color purposes)
+    """mols_by_formula = {
+        "He" => [m1, m2, m3],
+        "Ar" => [m4, m5],
+        ...
+    }"""
+    mols_by_formula = Dict{String, Array{Molecule}}()
+    for m in mols
+        if haskey(mols_by_formula, m.chemicalFormula)
+            push!(mols_by_formula[m.chemicalFormula], m)
+        else
+            mols_by_formula[m.chemicalFormula] = [m]
+        end
     end
 
     # Prepare figure
@@ -195,27 +198,40 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
         title = @lift("t = $($T) s"),
         limits=(xlims, ylims, zlims),
         azimuth = 0.3 * pi
-    )
-
-    # Init 1st position for the scatter
-    xs, ys, zs = pos_hist[1]
-    scatter_plot = scatter!(ax, xs, ys, zs, color=1:20, markersize=10)
+    )    
+    
+    # Init 1st position for scatters (1 scatter per molecule type)
+    scatter_plots = []
+    for i in 1:length(mols_by_formula)
+        xs, ys, zs = mols[1].pos_hist[1]
+        # println(mol_formula)
+        # println(length(mols_list))
+        sc_plot = scatter!(ax, xs, ys, zs, markersize=10, color=i, colorrange = (1, length(mols_by_formula)))
+        push!(scatter_plots, sc_plot)
+    end
     
     @time "Time to generate video" record(fig, output_path * ".mp4", 1:framestep:total_frames; framerate = framerate) do f
         frame[] = f
         T[] = timestamps[f]
 
-        # Update scatter with current positions
-        xs = []; ys = []; zs = []
-        for (i, m) in enumerate(mols) # foreach molecule
-            x, y, z = pos_hist[i][f]
-            push!(xs, x)
-            push!(ys, y)
-            push!(zs, z)
+        # Generate a scatter for each mol type (each having their color)
+        for (i, mol_formula) in enumerate(keys(mols_by_formula))
+            # Update scatter with current positions
+            xs = []; ys = []; zs = []
+            
+            mols_curr_form = mols_by_formula[mol_formula]
+            for m in mols_curr_form     # foreach molecule
+                x, y, z = m.pos_hist[f] # Get positions at frame f for molecule m
+                push!(xs, x)
+                push!(ys, y)
+                push!(zs, z)
+            end
+
+            scatter_plots[i][1] = xs  # xs = [mol1_x, mol2_x, mol3_z] at frame f
+            scatter_plots[i][2] = ys  # y
+            scatter_plots[i][3] = zs  # z
         end
-        scatter_plot[1] = xs  # xs = [mol1_x, mol2_x, mol3_z] at frame f
-        scatter_plot[2] = ys  # y
-        scatter_plot[3] = zs  # z
+
     end
 
 
@@ -246,7 +262,7 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
 
     println("Video saved in " * output_path * " ! :)")
 
-    generateGravityProbaGraph(pos_hist, output_path * "_z_positions_dist.png")
+    generateGravityProbaGraph(mols, output_path * "_z_positions_dist.png")
 
     display(fig)
 
