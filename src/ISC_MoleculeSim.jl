@@ -138,7 +138,6 @@ function generateGravityProbaGraph(mols::Array{Molecule}, filename="./out/z_posi
     for mol in mols
         append!(last_pos_hist, last(mol.pos_hist)[3])
     end
-    println(last_pos_hist)
 
     f = Figure()
     ax = Axis(f[1, 1],
@@ -234,7 +233,8 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
 
     end
 
-
+    # Exports simultation settings in a TOML file
+    # And CSV file containing pos and speeds (not done yet)
     if (exportToCSV)
         # CSV Structure :
         # frame, speed_x, speed_y, speed_z, pos_x, pos_y, pos_z
@@ -246,7 +246,7 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
 
         # Export settings
         settings = Dict( 
-            "simultation" => Dict(
+            "simulation" => Dict(
                 "delta_t" => delta_t,
                 "until" => until,
                 "domain" => [domain.l_x, domain.l_y, domain.l_z],
