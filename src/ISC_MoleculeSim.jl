@@ -16,21 +16,21 @@ mutable struct Molecule
     # Mutable means that it can be modified
     chemicalFormula::String
     
-    mass::Number        # kg
-    radius::Number      # m
+    mass::Float64        # kg
+    radius::Float64      # m
 
-    position::Vector
-    speed::Vector       # m/s
+    position::Vector{Float64}
+    speed::Vector{Float64}       # m/s
 
-    pos_hist::Array{Vector}
-    speed_hist::Array{Vector}
+    pos_hist::Array{Vector{Float64}}
+    speed_hist::Array{Vector{Float64}}
 end
 
 """Represents the volume where the molecules will be."""
 struct Domain
-    l_x::Number # m
-    l_y::Number # m
-    l_z::Number # m
+    l_x::Float64 # m
+    l_y::Float64 # m
+    l_z::Float64 # m
 end
 
 """Returns the volume of the provided domain in m³."""
@@ -131,6 +131,8 @@ function detectMolsCollision(m1::Molecule, m2::Molecule)::Bool
     return (dist <= r)
 end
 
+#region Graphs generation
+
 """Displays a Makie graph containing the distributions of positions 
 in Z of the molecules, at the end of the simulation."""
 function generateGravityProbaGraph(mols::Array{Molecule}, filename="./out/z_position_dist.png")
@@ -150,6 +152,8 @@ function generateGravityProbaGraph(mols::Array{Molecule}, filename="./out/z_posi
     display(f)
     return
 end
+
+#endregion
 
 """Generate simulation with provided settings and outputs it to `./out` folder."""
 function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; framestep::Int= 30, exportToCSV::Bool = true, output_path::String = "./out/animation", g::Number=-9.81)    
