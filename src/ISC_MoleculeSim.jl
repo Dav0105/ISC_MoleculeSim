@@ -4,11 +4,12 @@ using GLMakie, LinearAlgebra, Makie, CSV, TOML
 
 export Molecule, Domain, generateSimulation
 
+#region Structs
 """
 Struct used to store Molecule properties  
 `mass` = kg  
 `radius` = m  
-`chemicalFormula` = String  
+`chemicalFormula` = String   
 `position` = (m, m)  
 `speed` = m/s
 """
@@ -32,7 +33,9 @@ struct Domain
     l_y::Float64 # m
     l_z::Float64 # m
 end
+#endregion
 
+#region Computation functions
 """Returns the volume of the provided domain in m³."""
 function getDomainVolume(d::Domain)::Number
     return d.l_x * d.l_y * d.l_z
@@ -130,6 +133,7 @@ function detectMolsCollision(m1::Molecule, m2::Molecule)::Bool
 
     return (dist <= r)
 end
+#endregion
 
 #region Graphs generation
 
@@ -153,8 +157,85 @@ function generateGravityProbaGraph(mols::Array{Molecule}, filename="./out/z_posi
     return
 end
 
-#endregion
+"""Displays a Makie graph of the average m*v^2 across time for the provided molecules."""
+function generateMeanMv2Graph(
+    mols::Array{Molecule},
+    delta_t::Number,
+    filename::String = "./out/mv2_vs_time.png"
+)
+    if isempty(mols) || isempty(first(mols).speed_hist)
+        error("Cannot plot <mv^2> without simulated molecule speed history")
+    end
 
+    frame_count = length(first(mols).speed_hist)
+    times = collect(1:frame_count) .* delta_t
+    mean_mv2 = zeros(frame_count)
+
+    for frame in 1:frame_count
+        total_mv2 = 0.0
+        for mol in mols
+            speed = mol.speed_hist[frame]
+            total_mv2 += mol.mass * dot(speed, speed)
+        end
+        mean_mv2[frame] = total_mv2 / length(mols)
+    end
+
+    f = Figure()
+    ax = Axis(
+        f[1, 1],
+        title = "Average <m v^2> across time",
+        xlabel = "Time (s)",
+        ylabel = "<m v^2> (kg·m²/s²)",
+    )
+    lines!(ax, times, mean_mv2)
+    save(filename, f)
+    display(f)
+    return
+end
+
+"""Displays a Makie graph of the average temperature across time for the provided molecules."""
+function generateTemperatureGraph(
+    mols::Array{Molecule},
+    delta_t::Number,
+    filename::String = "./out/temperature_vs_time.png"
+)
+    boltzmann_constant = 1.380649 * 10^-23 # J/K
+
+    frame_count = length(first(mols).speed_hist)
+    mean_mv2 = zeros(frame_count)
+    times = collect(1:frame_count) .* delta_t
+    for frame in 1:frame_count
+
+        # Compute m * v^2 each molecule at this frame
+        for mol in mols
+            speed = mol.speed_hist[frame]
+            mean_mv2[frame] += mol.mass * dot(speed, speed)
+        end
+
+        # Average of m * v^2 over number of molecules
+        mean_mv2[frame] /= length(mols)
+
+        # Convert to temperature using T = (m * <v^2>) / (3 * k_B)
+        mean_mv2[frame] /= (3 * boltzmann_constant)
+    end
+
+    # PLOT THAT
+    f = Figure()
+    ax = Axis(
+        f[1, 1],
+        title = "Temperature (proportional to m·<v²>) across time for each molecule type",
+        xlabel = "Time (s)",
+        ylabel = "Temperature (K)",
+    )
+    lines!(ax, times, mean_mv2)
+
+    save(filename, f)
+    display(f)
+    return
+end
+
+#endregion
+#region Main function
 """Generate simulation with provided settings and outputs it to `./out` folder."""
 function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; framestep::Int= 30, exportToCSV::Bool = true, output_path::String = "./out/animation", g::Number=-9.81)    
     println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
@@ -266,10 +347,14 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
 
     println("Video saved in " * output_path * " ! :)")
 
+    # Graph generation
     generateGravityProbaGraph(mols, output_path * "_z_positions_dist.png")
+    generateMeanMv2Graph(mols, delta_t, output_path * "_mv2_vs_time.png")
+    generateTemperatureGraph(mols, delta_t, output_path * "_temperature_vs_time.png")
 
     display(fig)
 
 end
+#endregion
 
 end # module ISC_MoleculeSim
