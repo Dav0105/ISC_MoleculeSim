@@ -139,13 +139,17 @@ end
 
 """Displays a Makie graph containing the distributions of positions 
 in Z of the molecules, at the end of the simulation."""
-function generateGravityProbaGraph(mols::Array{Molecule}, filename="./out/z_position_dist.png")
+function generateGravityProbaGraph(
+    mols::Array{Molecule}, 
+    filename="./out/z_position_dist.png";
+    fig_size::Tuple{Int, Int} = (1000, 800)
+)
     last_pos_hist = []
     for mol in mols
         append!(last_pos_hist, last(mol.pos_hist)[3])
     end
 
-    f = Figure()
+    f = Figure(size = fig_size)
     ax = Axis(f[1, 1],
         title = "Distribution of molecules positions in Z at the end of the simulation",
         xlabel = "Position in Z",
@@ -153,7 +157,7 @@ function generateGravityProbaGraph(mols::Array{Molecule}, filename="./out/z_posi
     )
     hist!(ax, last_pos_hist)
     save(filename, f)           # Save figure
-    display(f)
+    # display(f)
     return
 end
 
@@ -161,7 +165,8 @@ end
 function generateMeanMv2Graph(
     mols::Array{Molecule},
     delta_t::Number,
-    filename::String = "./out/mv2_vs_time.png"
+    filename::String = "./out/mv2_vs_time.png";
+    fig_size::Tuple{Int, Int} = (1000, 800)
 )
     if isempty(mols) || isempty(first(mols).speed_hist)
         error("Cannot plot <mv^2> without simulated molecule speed history")
@@ -180,7 +185,7 @@ function generateMeanMv2Graph(
         mean_mv2[frame] = total_mv2 / length(mols)
     end
 
-    f = Figure()
+    f = Figure(size = fig_size)
     ax = Axis(
         f[1, 1],
         title = "Average <m v^2> across time",
@@ -189,7 +194,7 @@ function generateMeanMv2Graph(
     )
     lines!(ax, times, mean_mv2)
     save(filename, f)
-    display(f)
+    # display(f)
     return
 end
 
@@ -197,7 +202,8 @@ end
 function generateTemperatureGraph(
     mols::Array{Molecule},
     delta_t::Number,
-    filename::String = "./out/temperature_vs_time.png"
+    filename::String = "./out/temperature_vs_time.png";
+    fig_size::Tuple{Int, Int} = (1000, 800)
 )
     boltzmann_constant = 1.380649 * 10^-23 # J/K
 
@@ -209,7 +215,7 @@ function generateTemperatureGraph(
         # Compute m * v^2 each molecule at this frame
         for mol in mols
             speed = mol.speed_hist[frame]
-            mean_mv2[frame] += mol.mass * dot(speed, speed)
+            mean_mv2[frame] += mol.mass * norm(speed)^2
         end
 
         # Average of m * v^2 over number of molecules
@@ -220,7 +226,7 @@ function generateTemperatureGraph(
     end
 
     # PLOT THAT
-    f = Figure()
+    f = Figure(size = fig_size)
     ax = Axis(
         f[1, 1],
         title = "Temperature (proportional to m·<v²>) across time for each molecule type",
@@ -230,13 +236,97 @@ function generateTemperatureGraph(
     lines!(ax, times, mean_mv2)
 
     save(filename, f)
-    display(f)
+    # display(f)
+    return
+end
+
+"""Displays a Makie graph of the probability density of molecules positions in Z."""
+function generateZProbabilityGraph(
+    mols::Array{Molecule},
+    filename::String = "./out/z_position_probability.png";
+    fig_size::Tuple{Int, Int} = (1000, 800)
+)
+
+    # Compute average position in Z for each molecule across time
+    avg_pos_z = []
+    for mol in mols
+        z_pos_sum::Float64 = 0.0
+        for (x, y, z) in mol.pos_hist
+            z_pos_sum += z
+        end
+        average_z = z_pos_sum / length(mol.pos_hist)
+        append!(avg_pos_z, average_z)
+    end
+
+    f = Figure(size = fig_size)
+    ax = Axis(f[1, 1],
+        title = "Distribution of probability density of molecules positions in Z",
+        xlabel = "Position in Z",
+        ylabel = "Probability Density",
+    )
+    hist!(ax, avg_pos_z)
+    save(filename, f)
+    # display(f)
+    return
+end
+
+function generatePressureGraph(
+    mols::Array{Molecule},
+    delta_t::Number,
+    domain::Domain,
+    filename::String = "./out/pressure_vs_time.png";
+    fig_size::Tuple{Int, Int} = (1000, 800)
+)
+
+    frame_count = length(first(mols).speed_hist)
+    mean_mv2 = zeros(frame_count)
+    times = collect(1:frame_count) .* delta_t
+    for frame in 1:frame_count
+
+        # Compute m * v^2 each molecule at this frame
+        for mol in mols
+            speed = mol.speed_hist[frame]
+            mean_mv2[frame] += mol.mass * norm(speed)^2
+        end
+
+        # Average of m * v^2 over number of molecules
+        mean_mv2[frame] /= length(mols)
+
+        # Convert to Pressure using P = (1/3) * (N/V) * <mv^2>
+        mean_mv2[frame] /= (3 * getDomainVolume(domain))
+    end
+
+    # PLOT THAT
+    f = Figure(size = fig_size)
+    ax = Axis(
+        f[1, 1],
+        title = "Pressure (proportional to m·<v²>) across time for each molecule type",
+        xlabel = "Time (s)",
+        ylabel = "Pressure (Pa)",
+    )
+    lines!(ax, times, mean_mv2)
+
+    save(filename, f)
+    # display(f)
     return
 end
 
 #endregion
 #region Main function
-"""Generate simulation with provided settings and outputs it to `./out` folder."""
+"""Generate simulation with provided settings and outputs it to `./out` folder.
+
+**Params:**  
+domain : Domain of the simulation  
+mols : Array of Molecules to add to the simulation  
+delta_t : Time step used for the simulation (in seconds)  
+until : Time until which the simulation will be generated (in seconds)  
+framerate : Framerate of the output video (in frames per second)  
+  
+framestep : Number of frames to skip between each frame of the output video  
+export_to_csv : Whether to export the simulation data to a CSV file (default: true) (not implemented yet, only exports settings to a TOML file for now)  
+output_path : Path where the output video and graphs will be saved (without extension, default: "./out/animation")  
+g : Gravitational acceleration to apply to molecules (in m/s², default: -9.81)  
+"""
 function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; framestep::Int= 30, exportToCSV::Bool = true, output_path::String = "./out/animation", g::Number=-9.81)    
     println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
 
@@ -348,11 +438,15 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
     println("Video saved in " * output_path * " ! :)")
 
     # Graph generation
-    generateGravityProbaGraph(mols, output_path * "_z_positions_dist.png")
-    generateMeanMv2Graph(mols, delta_t, output_path * "_mv2_vs_time.png")
-    generateTemperatureGraph(mols, delta_t, output_path * "_temperature_vs_time.png")
-
-    display(fig)
+    @time "Time to generate graphs" begin
+        size = (1000, 800)
+        generateGravityProbaGraph(mols, output_path * "_z_positions_dist.png", fig_size=size)
+        generateMeanMv2Graph(mols, delta_t, output_path * "_mv2_vs_time.png", fig_size=size)
+        generateTemperatureGraph(mols, delta_t, output_path * "_temperature_vs_time.png", fig_size=size)
+        generatePressureGraph(mols, delta_t, domain,output_path * "_pressure_vs_time.png", fig_size=size)
+        generateZProbabilityGraph(mols, output_path * "_z_position_probability.png", fig_size=size)
+    end
+    # display(fig)
 
 end
 #endregion

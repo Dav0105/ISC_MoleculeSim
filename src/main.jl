@@ -110,7 +110,7 @@ function main_helium_2()
     framerate = 30
 
     # Domain settings
-    size = 4 * 10^-8
+    size = 2 * 10^-8
     domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(size, size, size)
 
     # g
