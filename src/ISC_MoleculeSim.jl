@@ -302,9 +302,40 @@ function generatePressureGraph(
     # display(f)
     return
 end
+
+"""Displays a Makie graph of the entropy of the system across time."""
+function generateEntropyGraph(
+    mols::Array{Molecule},
+    domain::Domain,
+    delta_t::Number,
+    filename::String = "./out/entropy_vs_time.png";
+    fig_size::Tuple{Int, Int} = (1000, 800)
+)
+    # Get entropy for each frame
+    entropies = calculateEntropies(mols, domain)
+
+    # To display time in x axis
+    frame_count = length(first(mols).speed_hist)
+    times = collect(1:frame_count) .* delta_t
+
+    # PLOT THIS :D
+    f = Figure(size = fig_size)
+    ax = Axis(
+        f[1, 1],
+        title = "Entropy across time for the system of molecules",
+        xlabel = "Time (s)",
+        ylabel = "Entropy (bits)",
+    )
+
+    lines!(ax, times, entropies)
+    save(filename, f)
+    # display(f)
+    return
+end
 #endregion
 
 #region Entropy calculation
+"""Returns an array containing the probability distribution of positions and velocities of the provided molecules for each time."""
 function getProbabilityDistribution(mols::Array{Molecule}, domain::Domain)
 
     function getProba(elements::Array{Float64}, bin_domain::Tuple{Float64, Float64}, num_bins::Int = 10)
@@ -330,26 +361,34 @@ function getProbabilityDistribution(mols::Array{Molecule}, domain::Domain)
         return probabilities
     end
 
-    x_proba = getProba([last(mol.pos_hist)[1] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10)
-    y_proba = getProba([last(mol.pos_hist)[2] for mol in mols], (-domain.l_y / 2, domain.l_y / 2), 10)
-    z_proba = getProba([last(mol.pos_hist)[3] for mol in mols], (-domain.l_z / 2, domain.l_z / 2), 10)
-    v2_proba = getProba([norm(last(mol.speed_hist))^2 for mol in mols], (0.0, 200_000.0), 200)
+    x_probas = []; y_probas = []; z_probas = []; v2_probas = []
+    for t in 1:length(first(mols).pos_hist)        
+        push!(x_probas, getProba([mol.pos_hist[t][1] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10))
+        push!(y_probas, getProba([mol.pos_hist[t][2] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10))
+        push!(z_probas, getProba([mol.pos_hist[t][3] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10))
+        push!(v2_probas, getProba([norm(mol.speed_hist[t])^2 for mol in mols], (0.0, 200_000.0), 200))
+    end
 
-    return x_proba, y_proba, z_proba, v2_proba
+    return x_probas, y_probas, z_probas, v2_probas
 end
 
-function calculateEntropy(mols::Array{Molecule}, domain::Domain)
+"""Returns an array containing the entropy of the system at each time.  
+The entropy is calculated using the formula `H(X, Y, Z, < v^2 >) = H(X) + H(Y) + H(Z) + H(< v^2 >)`."""
+function calculateEntropies(mols::Array{Molecule}, domain::Domain)
     # Compute the probability distribution of positions and velocities
-    px, py, pz, pv2 = getProbabilityDistribution(mols, domain)
+    pxs, pys, pzs, pv2s = getProbabilityDistribution(mols, domain)
 
-    # H(X, Y, Z, < v^2 >) = H(X) + H(Y) + H(Z) + H(< v^2 >)
     # H(X) = -Σ P(x) log P(x)
     function entropy(probas)
         # iszero() to avoid NaN values when proba is 0.0
         return -sum(p -> iszero(p) ? 0.0 : p * log2(p), probas)
     end
 
-    return entropy(px) + entropy(py) + entropy(pz) + entropy(pv2) 
+    # Get entropy for each probability distribution
+    # H(X, Y, Z, < v^2 >) = H(X) + H(Y) + H(Z) + H(< v^2 >)
+    entropies = [entropy(px) + entropy(py) + entropy(pz) + entropy(pv2) for (px, py, pz, pv2) in zip(pxs, pys, pzs, pv2s)]
+
+    return entropies
 end
 #endregion
 
@@ -486,11 +525,8 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
         generateTemperatureGraph(mols, delta_t, output_path * "_temperature_vs_time.png", fig_size=size)
         generatePressureGraph(mols, delta_t, domain,output_path * "_pressure_vs_time.png", fig_size=size)
         generateZProbabilityGraph(mols, domain, 10, output_path * "_z_position_probability.png", fig_size=size)
+        generateEntropyGraph(mols, domain, delta_t, output_path * "_entropy_vs_time.png", fig_size=size)
     end
-
-    entropy = calculateEntropy(mols, domain)
-    println("Entropy of the system at the end of the simulation : " * string(entropy))
-    # display(fig)
 
 end
 #endregion
