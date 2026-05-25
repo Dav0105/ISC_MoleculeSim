@@ -49,7 +49,11 @@ function main_test()
     molecules::Array{ISC_MoleculeSim.Molecule} = [mHe, mNe, mNe2, mNe3]
 
     # Domain
-    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(20, 20, 20)
+    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(
+        (-10, 10),
+        (-10, 10),
+        (-10, 10)
+    )
 
     # Time settings
     delta_t::Number = 0.0001
@@ -69,7 +73,11 @@ function main_helium()
     # Domain settings
     nano = 10^-9
     size = 10 * nano
-    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(size, size, size)
+    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(
+        (-size / 2, size / 2), 
+        (-size / 2, size / 2), 
+        (-size / 2, size / 2)
+    )
 
     # Molecules
     num_mols = 400
