@@ -5,9 +5,9 @@ include("ISC_MoleculeSim.jl")
 
 function generate_random_positions(domain::ISC_MoleculeSim.Domain)
     return [
-        rand(-1:0.001:1) * domain.l_x/2,
-        rand(-1:0.001:1) * domain.l_y/2,
-        rand(-1:0.001:1) * domain.l_z/2
+        rand(-1:0.001:1) * (domain.lims_x[2] - domain.lims_x[1]) / 2 + (domain.lims_x[1] + domain.lims_x[2]) / 2,
+        rand(-1:0.001:1) * (domain.lims_y[2] - domain.lims_y[1]) / 2 + (domain.lims_y[1] + domain.lims_y[2]) / 2,
+        rand(-1:0.001:1) * (domain.lims_z[2] - domain.lims_z[1]) / 2 + (domain.lims_z[1] + domain.lims_z[2]) / 2
     ]
 end
 
@@ -111,7 +111,7 @@ function main_helium_2()
 
     # Domain settings
     size = 2 * 10^-8
-    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(size, size, size)
+    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain((-size / 2, size / 2), (-size / 2, size / 2), (-size / 2, size / 2))
 
     # g
     g = -9.81 * 10^14
@@ -177,7 +177,7 @@ function main_helium_2_lite()
 
     # Domain settings
     size = 0.25 * 10^-8
-    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(size, size, size)
+    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain((-size / 2, size / 2), (-size / 2, size / 2), (-size / 2, size / 2))
 
     # g
     g = -9.81 * 10^13
@@ -235,7 +235,59 @@ function main_helium_2_lite()
     ISC_MoleculeSim.generateSimulation(domain, molecules, delta_t, until, framerate, framestep=30, g=g)
 end
 
+function main_helium_small_initial_pos()
+    # Time settings
+    delta_t::Number = 1 *10^-14
+    until::Number = 10 * 10^-11
+    framerate = 30
+
+    # Domain settings
+    domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(
+        (-5 * 10^-8, 15 * 10^-8), 
+        (-5 * 10^-8, 5 * 10^-8), 
+        (-5 * 10^-8, 5 * 10^-8)
+    )
+    spawn_domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(
+        (-5 * 10^-8 / 8, 5 * 10^-8 / 8), 
+        (-5 * 10^-8 / 8, 5 * 10^-8 / 8), 
+        (-5 * 10^-8 / 8, 5 * 10^-8 / 8)
+    )
+
+    # g
+    g = 0.0
+
+    # Molecules
+    molecules::Array{ISC_MoleculeSim.Molecule} = []
+
+    ## Helium
+    num_mols_helium = 400
+    init_speed_helium = 1400.0 # m/s
+    for i in 1:num_mols_helium
+        pos::Vector = generate_random_positions(spawn_domain)
+
+        # Generate random speeds
+        rand_vect::Vector = randn(3)
+        rand_vect = normalize(rand_vect)
+        speed::Vector = rand_vect .* init_speed_helium
+
+        mHe = ISC_MoleculeSim.Molecule(
+            "He",               # Chemical formula
+            6.646 * 10^-27,     # Mass
+            1.1 * 10^-10,       # Radius
+            pos,                # Position
+            speed,              # Speed
+            [],                 # pos_hist
+            []                  # speed_hist
+        )
+        push!(molecules, mHe)
+    end
+
+    # GENERATE THE AWESOME SIMULATION
+    ISC_MoleculeSim.generateSimulation(domain, molecules, delta_t, until, framerate, framestep=30, g=g)
+end
+
 # main_test()
 # main_helium()
 # main_helium_2()
-main_helium_2_lite()
+# main_helium_2_lite()
+main_helium_small_initial_pos()

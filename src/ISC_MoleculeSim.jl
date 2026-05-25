@@ -29,16 +29,20 @@ end
 
 """Represents the volume where the molecules will be."""
 struct Domain
-    l_x::Float64 # m
-    l_y::Float64 # m
-    l_z::Float64 # m
+    # l_x::Float64 # m
+    # l_y::Float64 # m
+    # l_z::Float64 # m
+    lims_x::Tuple{Float64, Float64} # m
+    lims_y::Tuple{Float64, Float64} # m
+    lims_z::Tuple{Float64, Float64} # m
 end
 #endregion
 
 #region Computation functions
 """Returns the volume of the provided domain in m³."""
 function getDomainVolume(d::Domain)::Number
-    return d.l_x * d.l_y * d.l_z
+    # return d.l_x * d.l_y * d.l_z
+    return (d.lims_x[2] - d.lims_x[1]) * (d.lims_y[2] - d.lims_y[1]) * (d.lims_z[2] - d.lims_z[1])
 end
 
 """Computes and applies the Movement of a single molecule with delta_time provided."""
@@ -88,17 +92,14 @@ end
 function checkWallCollisions(d::Domain, mols::Array{Molecule})::Nothing
     for m in mols
         mx, my, mz = m.position
-        dlx = d.l_x / 2
-        dly = d.l_y / 2
-        dlz = d.l_z / 2
         
-        if (mx < -dlx) || (mx > dlx)
+        if (mx < d.lims_x[1]) || (mx > d.lims_x[2])
             m.speed[1] = -m.speed[1]
         end
-        if (my < -dly) || (my > dly)
+        if (my < d.lims_y[1]) || (my > d.lims_y[2])
             m.speed[2] = -m.speed[2]
         end
-        if (mz < -dlz) || (mz > dlz)
+        if (mz < d.lims_z[1]) || (mz > d.lims_z[2])
             m.speed[3] = -m.speed[3]
         end
     end
@@ -243,7 +244,6 @@ end
 """Displays a Makie graph of the probability density of molecules positions in Z."""
 function generateZProbabilityGraph(
     mols::Array{Molecule},
-    domain::Domain,
     num_bins::Int = 10,
     filename::String = "./out/z_position_probability.png";
     fig_size::Tuple{Int, Int} = (1000, 800)
@@ -363,9 +363,9 @@ function getProbabilityDistribution(mols::Array{Molecule}, domain::Domain)
 
     x_probas = []; y_probas = []; z_probas = []; v2_probas = []
     for t in 1:length(first(mols).pos_hist)        
-        push!(x_probas, getProba([mol.pos_hist[t][1] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10))
-        push!(y_probas, getProba([mol.pos_hist[t][2] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10))
-        push!(z_probas, getProba([mol.pos_hist[t][3] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10))
+        push!(x_probas, getProba([mol.pos_hist[t][1] for mol in mols], (domain.lims_x[1], domain.lims_x[2]), 10))
+        push!(y_probas, getProba([mol.pos_hist[t][2] for mol in mols], (domain.lims_y[1], domain.lims_y[2]), 10))
+        push!(z_probas, getProba([mol.pos_hist[t][3] for mol in mols], (domain.lims_z[1], domain.lims_z[2]), 10))
         push!(v2_probas, getProba([norm(mol.speed_hist[t])^2 for mol in mols], (0.0, 200_000.0), 200))
     end
 
@@ -407,7 +407,10 @@ export_to_csv : Whether to export the simulation data to a CSV file (default: tr
 output_path : Path where the output video and graphs will be saved (without extension, default: "./out/animation")  
 g : Gravitational acceleration to apply to molecules (in m/s², default: -9.81)  
 """
-function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; framestep::Int= 30, exportToCSV::Bool = true, output_path::String = "./out/animation", g::Number=-9.81)    
+function generateSimulation(
+    domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; 
+    framestep::Int= 30, exportToCSV::Bool = false, output_path::String = "./out/animation", g::Number=-9.81
+)
     println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
 
     timestamps = 0:delta_t:until
@@ -441,14 +444,18 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
 
     # Prepare figure
     fig = Figure(size = (800, 600))
-    xlims = (-domain.l_x/2, domain.l_x/2)
-    ylims = (-domain.l_y/2, domain.l_y/2)
-    zlims = (-domain.l_z/2, domain.l_z/2)
+    xlims = (domain.lims_x[1], domain.lims_x[2])
+    ylims = (domain.lims_y[1], domain.lims_y[2])
+    zlims = (domain.lims_z[1], domain.lims_z[2])
+
+    aspect_x = xlims[2] - xlims[1]
+    aspect_y = ylims[2] - ylims[1]
+    aspect_z = zlims[2] - zlims[1]
 
     ax = Axis3(
         fig[1, 1], 
         # perspectiveness = 0.5,
-        aspect = (1, 1, 1), 
+        aspect = (aspect_x, aspect_y, aspect_z), 
         title = @lift("t = $($T) s"),
         limits=(xlims, ylims, zlims),
         azimuth = 0.3 * pi
@@ -504,7 +511,9 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
             "simulation" => Dict(
                 "delta_t" => delta_t,
                 "until" => until,
-                "domain" => [domain.l_x, domain.l_y, domain.l_z],
+                "domain_x" => [domain.lims_x[1], domain.lims_x[2]],
+                "domain_y" => [domain.lims_y[1], domain.lims_y[2]],
+                "domain_z" => [domain.lims_z[1], domain.lims_z[2]],
                 "framerate" => framerate,
                 "g" => g
             )
@@ -524,7 +533,7 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
         generateMeanMv2Graph(mols, delta_t, output_path * "_mv2_vs_time.png", fig_size=size)
         generateTemperatureGraph(mols, delta_t, output_path * "_temperature_vs_time.png", fig_size=size)
         generatePressureGraph(mols, delta_t, domain,output_path * "_pressure_vs_time.png", fig_size=size)
-        generateZProbabilityGraph(mols, domain, 10, output_path * "_z_position_probability.png", fig_size=size)
+        generateZProbabilityGraph(mols, 10, output_path * "_z_position_probability.png", fig_size=size)
         generateEntropyGraph(mols, domain, delta_t, output_path * "_entropy_vs_time.png", fig_size=size)
     end
 
