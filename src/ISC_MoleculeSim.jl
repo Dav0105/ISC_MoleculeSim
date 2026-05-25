@@ -243,29 +243,21 @@ end
 """Displays a Makie graph of the probability density of molecules positions in Z."""
 function generateZProbabilityGraph(
     mols::Array{Molecule},
+    domain::Domain,
+    num_bins::Int = 10,
     filename::String = "./out/z_position_probability.png";
     fig_size::Tuple{Int, Int} = (1000, 800)
 )
-
-    # Compute average position in Z for each molecule across time
-    avg_pos_z = []
-    for mol in mols
-        z_pos_sum::Float64 = 0.0
-        for (x, y, z) in mol.pos_hist
-            z_pos_sum += z
-        end
-        average_z = z_pos_sum / length(mol.pos_hist)
-        append!(avg_pos_z, average_z)
-    end
+    z_positions = [last(mol.pos_hist)[3] for mol in mols]
 
     f = Figure(size = fig_size)
     ax = Axis(f[1, 1],
-        title = "Distribution of probability density of molecules positions in Z",
+        title = "Distribution of molecules positions in Z at the end of the simulation",
         xlabel = "Position in Z",
-        ylabel = "Probability Density",
+        ylabel = "Probability",
     )
-    hist!(ax, avg_pos_z)
-    save(filename, f)
+    hist!(ax, z_positions, bins=num_bins, normalization=:probability)
+    save(filename, f)  # Save figure
     # display(f)
     return
 end
@@ -310,8 +302,57 @@ function generatePressureGraph(
     # display(f)
     return
 end
-
 #endregion
+
+#region Entropy calculation
+function getProbabilityDistribution(mols::Array{Molecule}, domain::Domain)
+
+    function getProba(elements::Array{Float64}, bin_domain::Tuple{Float64, Float64}, num_bins::Int = 10)
+        z_min, z_max = bin_domain
+        bin_width = (z_max - z_min) / num_bins
+
+        # Count the number of positions in each bin
+        counts = zeros(Int, num_bins)
+        for e in elements
+            for bin_idx in 1:num_bins
+                curr_min_z = z_min + (bin_idx - 1) * bin_width
+                curr_max_z = z_min + bin_idx * bin_width
+                if curr_min_z <= e < curr_max_z
+                    counts[bin_idx] += 1
+                    break
+                end
+            end
+        end
+        
+        # Normalize to get probabilities
+        probabilities = [c / length(elements) for c in counts]
+
+        return probabilities
+    end
+
+    x_proba = getProba([last(mol.pos_hist)[1] for mol in mols], (-domain.l_x / 2, domain.l_x / 2), 10)
+    y_proba = getProba([last(mol.pos_hist)[2] for mol in mols], (-domain.l_y / 2, domain.l_y / 2), 10)
+    z_proba = getProba([last(mol.pos_hist)[3] for mol in mols], (-domain.l_z / 2, domain.l_z / 2), 10)
+    v2_proba = getProba([norm(last(mol.speed_hist))^2 for mol in mols], (0.0, 200_000.0), 200)
+
+    return x_proba, y_proba, z_proba, v2_proba
+end
+
+function calculateEntropy(mols::Array{Molecule}, domain::Domain)
+    # Compute the probability distribution of positions and velocities
+    px, py, pz, pv2 = getProbabilityDistribution(mols, domain)
+
+    # H(X, Y, Z, < v^2 >) = H(X) + H(Y) + H(Z) + H(< v^2 >)
+    # H(X) = -Σ P(x) log P(x)
+    function entropy(probas)
+        # iszero() to avoid NaN values when proba is 0.0
+        return -sum(p -> iszero(p) ? 0.0 : p * log2(p), probas)
+    end
+
+    return entropy(px) + entropy(py) + entropy(pz) + entropy(pv2) 
+end
+#endregion
+
 #region Main function
 """Generate simulation with provided settings and outputs it to `./out` folder.
 
@@ -444,8 +485,11 @@ function generateSimulation(domain::Domain, mols::Array{Molecule}, delta_t::Numb
         generateMeanMv2Graph(mols, delta_t, output_path * "_mv2_vs_time.png", fig_size=size)
         generateTemperatureGraph(mols, delta_t, output_path * "_temperature_vs_time.png", fig_size=size)
         generatePressureGraph(mols, delta_t, domain,output_path * "_pressure_vs_time.png", fig_size=size)
-        generateZProbabilityGraph(mols, output_path * "_z_position_probability.png", fig_size=size)
+        generateZProbabilityGraph(mols, domain, 10, output_path * "_z_position_probability.png", fig_size=size)
     end
+
+    entropy = calculateEntropy(mols, domain)
+    println("Entropy of the system at the end of the simulation : " * string(entropy))
     # display(fig)
 
 end

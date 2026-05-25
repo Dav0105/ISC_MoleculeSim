@@ -114,7 +114,7 @@ function main_helium_2()
     domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(size, size, size)
 
     # g
-    g = -9.81 * 10^13
+    g = -9.81 * 10^14
 
     # Molecules
     molecules::Array{ISC_MoleculeSim.Molecule} = []
