@@ -106,11 +106,14 @@ function checkWallCollisions(d::Domain, mols::Array{Molecule})::Nothing
 end
 
 """Compute all positions for all molecules until provided time, and returns an array containing [positions, speeds] for each t."""
-function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number, g::Number)
+function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number, g::Number, second_domain = nothing)
 
     for t in 0:dt:until
+        # Changes domain at half time if second domain provided
+        domain_to_use = (second_domain !== nothing && t >= until / 2) ? second_domain : domain
+
         # Check Collisions between molecules and walls
-        checkWallCollisions(domain, mols)
+        checkWallCollisions(domain_to_use, mols)
 
         # Compute movement for each molecule
         for m in mols
@@ -309,10 +312,16 @@ function generateEntropyGraph(
     domain::Domain,
     delta_t::Number,
     filename::String = "./out/entropy_vs_time.png";
-    fig_size::Tuple{Int, Int} = (1000, 800)
+    fig_size::Tuple{Int, Int} = (1000, 800),
+    probability_bins::Tuple{Int, Int, Int, Int} = (10, 10, 10, 200),
+    second_domain = nothing
 )
     # Get entropy for each frame
-    entropies = calculateEntropies(mols, domain)
+    if (second_domain !== nothing)
+        entropies = calculateEntropies(mols, second_domain, probability_bins)
+    else
+        entropies = calculateEntropies(mols, domain, probability_bins)
+    end
 
     # To display time in x axis
     frame_count = length(first(mols).speed_hist)
@@ -336,7 +345,7 @@ end
 
 #region Entropy calculation
 """Returns an array containing the probability distribution of positions and velocities of the provided molecules for each time."""
-function getProbabilityDistribution(mols::Array{Molecule}, domain::Domain)
+function getProbabilityDistribution(mols::Array{Molecule}, domain::Domain, probability_bins::Tuple{Int, Int, Int, Int} = (10, 10, 10, 200))
 
     function getProba(elements::Array{Float64}, bin_domain::Tuple{Float64, Float64}, num_bins::Int = 10)
         z_min, z_max = bin_domain
@@ -363,10 +372,10 @@ function getProbabilityDistribution(mols::Array{Molecule}, domain::Domain)
 
     x_probas = []; y_probas = []; z_probas = []; v2_probas = []
     for t in 1:length(first(mols).pos_hist)        
-        push!(x_probas, getProba([mol.pos_hist[t][1] for mol in mols], (domain.lims_x[1], domain.lims_x[2]), 10))
-        push!(y_probas, getProba([mol.pos_hist[t][2] for mol in mols], (domain.lims_y[1], domain.lims_y[2]), 10))
-        push!(z_probas, getProba([mol.pos_hist[t][3] for mol in mols], (domain.lims_z[1], domain.lims_z[2]), 10))
-        push!(v2_probas, getProba([norm(mol.speed_hist[t])^2 for mol in mols], (0.0, 200_000.0), 200))
+        push!(x_probas, getProba([mol.pos_hist[t][1] for mol in mols], (domain.lims_x[1], domain.lims_x[2]), probability_bins[1]))
+        push!(y_probas, getProba([mol.pos_hist[t][2] for mol in mols], (domain.lims_y[1], domain.lims_y[2]), probability_bins[2]))
+        push!(z_probas, getProba([mol.pos_hist[t][3] for mol in mols], (domain.lims_z[1], domain.lims_z[2]), probability_bins[3]))
+        push!(v2_probas, getProba([norm(mol.speed_hist[t]) for mol in mols], (0.0, 200_000.0), probability_bins[4]))
     end
 
     return x_probas, y_probas, z_probas, v2_probas
@@ -374,9 +383,9 @@ end
 
 """Returns an array containing the entropy of the system at each time.  
 The entropy is calculated using the formula `H(X, Y, Z, < v^2 >) = H(X) + H(Y) + H(Z) + H(< v^2 >)`."""
-function calculateEntropies(mols::Array{Molecule}, domain::Domain)
+function calculateEntropies(mols::Array{Molecule}, domain::Domain, probability_bins::Tuple{Int, Int, Int, Int} = (10, 10, 10, 200))
     # Compute the probability distribution of positions and velocities
-    pxs, pys, pzs, pv2s = getProbabilityDistribution(mols, domain)
+    pxs, pys, pzs, pv2s = getProbabilityDistribution(mols, domain, probability_bins)
 
     # H(X) = -Σ P(x) log P(x)
     function entropy(probas)
@@ -406,12 +415,19 @@ framestep : Number of frames to skip between each frame of the output video
 export_to_csv : Whether to export the simulation data to a CSV file (default: true) (not implemented yet, only exports settings to a TOML file for now)  
 output_path : Path where the output video and graphs will be saved (without extension, default: "./out/animation")  
 g : Gravitational acceleration to apply to molecules (in m/s², default: -9.81)  
+second_domain : Optional second domain to use for the second half of the simulation (default: nothing)  
+probability_bins : Number of bins to use for the probability distribution when calculating entropy (x, y, z and v^2)
 """
 function generateSimulation(
     domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; 
-    framestep::Int= 30, exportToCSV::Bool = false, output_path::String = "./out/animation", g::Number=-9.81
+    framestep::Int= 30, exportToCSV::Bool = false, output_path::String = "./out/animation", g::Number=-9.81,
+    second_domain = nothing, probability_bins::Tuple{Int, Int, Int, Int} = (10, 10, 10, 200)
 )
+    # Domain volume
     println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
+    if (second_domain !== nothing)
+        println("Second domain volume : " * string(getDomainVolume(second_domain)) * " m³")
+    end
 
     timestamps = 0:delta_t:until
     total_frames = length(timestamps)
@@ -424,7 +440,7 @@ function generateSimulation(
 
     @time "Time to generate positions" begin
         # Compute all positions for all molecules
-        computePositions(mols, domain, delta_t, until, g)
+        computePositions(mols, domain, delta_t, until, g, second_domain)
     end
 
     # Separate molecules into different arrays by their chemical formula (for color purposes)
@@ -444,9 +460,16 @@ function generateSimulation(
 
     # Prepare figure
     fig = Figure(size = (800, 600))
-    xlims = (domain.lims_x[1], domain.lims_x[2])
-    ylims = (domain.lims_y[1], domain.lims_y[2])
-    zlims = (domain.lims_z[1], domain.lims_z[2])
+
+    if second_domain !== nothing
+        xlims = (second_domain.lims_x[1], second_domain.lims_x[2])
+        ylims = (second_domain.lims_y[1], second_domain.lims_y[2])
+        zlims = (second_domain.lims_z[1], second_domain.lims_z[2])
+    else
+        xlims = (domain.lims_x[1], domain.lims_x[2])
+        ylims = (domain.lims_y[1], domain.lims_y[2])
+        zlims = (domain.lims_z[1], domain.lims_z[2])
+    end
 
     aspect_x = xlims[2] - xlims[1]
     aspect_y = ylims[2] - ylims[1]
@@ -534,7 +557,7 @@ function generateSimulation(
         generateTemperatureGraph(mols, delta_t, output_path * "_temperature_vs_time.png", fig_size=size)
         generatePressureGraph(mols, delta_t, domain,output_path * "_pressure_vs_time.png", fig_size=size)
         generateZProbabilityGraph(mols, 10, output_path * "_z_position_probability.png", fig_size=size)
-        generateEntropyGraph(mols, domain, delta_t, output_path * "_entropy_vs_time.png", fig_size=size)
+        generateEntropyGraph(mols, domain, delta_t, output_path * "_entropy_vs_time.png", fig_size=size, probability_bins=probability_bins, second_domain=second_domain)
     end
 
 end

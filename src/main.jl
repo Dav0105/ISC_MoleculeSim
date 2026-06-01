@@ -251,17 +251,23 @@ function main_helium_small_initial_pos()
 
     # Domain settings
     domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(
-        (-5 * 10^-8, 15 * 10^-8), 
-        (-5 * 10^-8, 5 * 10^-8), 
-        (-5 * 10^-8, 5 * 10^-8)
+        (-5 * 10^-9, 5 * 10^-9), 
+        (-5 * 10^-9, 5 * 10^-9), 
+        (-5 * 10^-9, 5 * 10^-9)
+    )
+    second_domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(
+        (-5 * 10^-9, 15 * 10^-9), 
+        (-5 * 10^-9, 5 * 10^-9), 
+        (-5 * 10^-9, 5 * 10^-9)
     )
     spawn_domain::ISC_MoleculeSim.Domain = ISC_MoleculeSim.Domain(
-        (-5 * 10^-8 / 8, 5 * 10^-8 / 8), 
-        (-5 * 10^-8 / 8, 5 * 10^-8 / 8), 
-        (-5 * 10^-8 / 8, 5 * 10^-8 / 8)
+        (-5 * 10^-9 / 8, 5 * 10^-9 / 8), 
+        (-5 * 10^-9 / 8, 5 * 10^-9 / 8), 
+        (-5 * 10^-9 / 8, 5 * 10^-9 / 8)
     )
 
     # g
+    # g = -9.81 * 10^13
     g = 0.0
 
     # Molecules
@@ -291,7 +297,10 @@ function main_helium_small_initial_pos()
     end
 
     # GENERATE THE AWESOME SIMULATION
-    ISC_MoleculeSim.generateSimulation(domain, molecules, delta_t, until, framerate, framestep=30, g=g)
+    ISC_MoleculeSim.generateSimulation(
+        domain, molecules, delta_t, until, framerate, 
+        framestep=30, g=g, second_domain=second_domain, probability_bins=(20, 10, 10, 200)
+    )
 end
 
 # main_test()
