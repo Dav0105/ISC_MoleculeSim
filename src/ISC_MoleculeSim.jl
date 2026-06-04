@@ -1,10 +1,10 @@
 module ISC_MoleculeSim
 
-using GLMakie, LinearAlgebra, Makie, CSV, TOML
+using GLMakie, LinearAlgebra, Makie, CSV, TOML, Distributions, Printf
 
 export Molecule, Domain, generateSimulation
 
-#region Structs
+#region Structs and consts
 """
 Struct used to store Molecule properties  
 `mass` = kg  
@@ -27,7 +27,8 @@ mutable struct Molecule
     speed_hist::Array{Vector{Float64}}
 end
 
-"""Represents the volume where the molecules will be."""
+"""Represents the volume where the molecules will be.  
+lims_ = (min, max) for A in {x, y, z}"""
 struct Domain
     # l_x::Float64 # m
     # l_y::Float64 # m
@@ -36,6 +37,8 @@ struct Domain
     lims_y::Tuple{Float64, Float64} # m
     lims_z::Tuple{Float64, Float64} # m
 end
+
+const boltzmann_constant = 1.380649 * 10^-23 # J/K
 #endregion
 
 #region Computation functions
@@ -105,15 +108,55 @@ function checkWallCollisions(d::Domain, mols::Array{Molecule})::Nothing
     end
 end
 
+"""Checks collisions between walls and provided molecules and corrects their
+    velocity if needed, while also applying a temperature to the walls (for z walls)"""
+function checkWallCollisionsWithTemp(d::Domain, mols::Array{Molecule}, temps::Tuple{Float64, Float64})::Nothing
+    for m in mols
+        mx, my, mz = m.position
+        
+        if (mx < d.lims_x[1]) || (mx > d.lims_x[2])
+            m.speed[1] = -m.speed[1]
+        end
+        if (my < d.lims_y[1]) || (my > d.lims_y[2])
+            m.speed[2] = -m.speed[2]
+        end
+        if (mz < d.lims_z[1]) || (mz > d.lims_z[2])
+            vx, vy, vz = m.speed
+
+            T = (mz < d.lims_z[1]) ? temps[1] : temps[2]
+            sigma = sqrt(boltzmann_constant * T / m.mass)
+
+            vx = rand(Normal(0, sigma))
+            vy = rand(Normal(0, sigma))
+
+            # Change sign to make sure molecule goes back in the domain
+            sign = vz < 0 ? 1 : -1 
+            vz = sign * sigma * sqrt(-2 * log(rand(Uniform(0, 1))))
+
+            m.speed = [vx, vy, vz]
+        end
+    end
+end
+
 """Compute all positions for all molecules until provided time, and returns an array containing [positions, speeds] for each t."""
-function computePositions(mols::Array{Molecule}, domain::Domain, dt::Number, until::Number, g::Number, second_domain = nothing)
+function computePositions(
+    mols::Array{Molecule}, domain::Domain, dt::Number, until::Number, g::Number; 
+    second_domain = nothing, temperatures::Union{Tuple{Float64, Float64}, Nothing} = nothing
+)
+
+    # Define the wall collision depending if we want to include temperatures for z+ and z- or not
+    if temperatures === nothing
+        coll_check = (dom, mols) -> checkWallCollisions(dom, mols)
+    else
+        coll_check = (dom, mols) -> checkWallCollisionsWithTemp(dom, mols, temperatures)
+    end
 
     for t in 0:dt:until
         # Changes domain at half time if second domain provided
         domain_to_use = (second_domain !== nothing && t >= until / 2) ? second_domain : domain
 
         # Check Collisions between molecules and walls
-        checkWallCollisions(domain_to_use, mols)
+        coll_check(domain_to_use, mols)
 
         # Compute movement for each molecule
         for m in mols
@@ -209,8 +252,6 @@ function generateTemperatureGraph(
     filename::String = "./out/temperature_vs_time.png";
     fig_size::Tuple{Int, Int} = (1000, 800)
 )
-    boltzmann_constant = 1.380649 * 10^-23 # J/K
-
     frame_count = length(first(mols).speed_hist)
     mean_mv2 = zeros(frame_count)
     times = collect(1:frame_count) .* delta_t
@@ -239,6 +280,71 @@ function generateTemperatureGraph(
     )
     lines!(ax, times, mean_mv2)
 
+    save(filename, f)
+    # display(f)
+    return
+end
+
+function generateTemperatureZGraph(
+    mols::Array{Molecule},
+    domain::Domain,
+    filename::String = "./out/temperature_vs_z.png";
+    fig_size::Tuple{Int, Int} = (1000, 800),
+    num_bins::Int = 10
+)
+    bin_width = (domain.lims_z[2] - domain.lims_z[1]) / num_bins
+
+    temps = zeros(Float64, num_bins)
+    x_axis = []
+    # For each bin, compute avg m and v^2, then compute temperature for this bin
+    for bin_idx in 1:num_bins
+        curr_min = domain.lims_z[1] + (bin_idx - 1) * bin_width
+        curr_max = domain.lims_z[1] + bin_idx * bin_width
+        append!(x_axis, [string(round(curr_min, sigdigits=3)) * " to " * string(round(curr_max, sigdigits=3))])
+
+        println("Current bin : $bin_idx, range : [$curr_min, $curr_max]")
+
+        v2_avg = 0.0
+        mass_avg = 0.0
+        mols_in_bin = 0
+        for m in mols
+            z_pos = last(m.pos_hist)[3]
+            if curr_min <= z_pos < curr_max
+                speed = last(m.speed_hist)
+
+                # v^2
+                v2_avg += norm(speed)^2
+                mass_avg += m.mass
+                mols_in_bin += 1
+            end
+        end
+        # Compute average m and v^2 for this bin
+        println("Mols in bin : $mols_in_bin")
+        v2_avg /= length(mols_in_bin)
+        mass_avg /= length(mols_in_bin)
+        
+        # Compute m * <v^2> for this bin
+        mv2 = mass_avg * v2_avg 
+
+        # Convert to temperature using T = (m * <v^2>) / (3 * k_B)
+        temps[bin_idx] = mv2 / (3.0 * boltzmann_constant)
+    end
+
+    
+    
+    println(x_axis)
+    println(temps)
+
+    f = Figure(size = fig_size)
+    ax = Axis(f[1, 1],
+        title = "Temperature (proportional to m·<v²>) across Z position",
+        xlabel = "Position in Z",
+        xticks = (1:num_bins, x_axis),
+        xticklabelrotation=45,
+        ylabel = "Temperature (K)",
+    )
+    barplot!(ax, temps)
+    # barplot!(ax, temps)
     save(filename, f)
     # display(f)
     return
@@ -417,11 +523,13 @@ output_path : Path where the output video and graphs will be saved (without exte
 g : Gravitational acceleration to apply to molecules (in m/s², default: -9.81)  
 second_domain : Optional second domain to use for the second half of the simulation (default: nothing)  
 probability_bins : Number of bins to use for the probability distribution when calculating entropy (x, y, z and v^2)
+temperatures : Tuple containing the temperatures at the sides of the domain (z+ and z-, default: (0.0, 0.0))
 """
 function generateSimulation(
     domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int; 
     framestep::Int= 30, exportToCSV::Bool = false, output_path::String = "./out/animation", g::Number=-9.81,
-    second_domain = nothing, probability_bins::Tuple{Int, Int, Int, Int} = (10, 10, 10, 200)
+    second_domain = nothing, probability_bins::Tuple{Int, Int, Int, Int} = (10, 10, 10, 200),
+    temperatures::Union{Tuple{Float64, Float64}, Nothing} = nothing
 )
     # Domain volume
     println("Domain volume : " * string(getDomainVolume(domain)) * " m³")
@@ -440,7 +548,7 @@ function generateSimulation(
 
     @time "Time to generate positions" begin
         # Compute all positions for all molecules
-        computePositions(mols, domain, delta_t, until, g, second_domain)
+        computePositions(mols, domain, delta_t, until, g; second_domain, temperatures)
     end
 
     # Separate molecules into different arrays by their chemical formula (for color purposes)
@@ -558,6 +666,7 @@ function generateSimulation(
         generatePressureGraph(mols, delta_t, domain,output_path * "_pressure_vs_time.png", fig_size=size)
         generateZProbabilityGraph(mols, 10, output_path * "_z_position_probability.png", fig_size=size)
         generateEntropyGraph(mols, domain, delta_t, output_path * "_entropy_vs_time.png", fig_size=size, probability_bins=probability_bins, second_domain=second_domain)
+        generateTemperatureZGraph(mols, domain, output_path * "_temperature_vs_z.png", fig_size=size, num_bins=10)
     end
 
 end
