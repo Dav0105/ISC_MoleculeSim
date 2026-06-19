@@ -69,7 +69,7 @@ function lennard_jones_force(
         return zeros(2)
     end
 
-    r = max(r, 0.5 * sigma)
+    # r = max(r, 0.5 * sigma)
 
     return 24 * epsilon * (1 / r^2) * ((2 * (sigma / r)^12) - (sigma / r)^6) * r_ij
 end
@@ -79,7 +79,7 @@ function calculate_force_for_molecule(mol::Molecule, molecules::Vector{Molecule}
 
     for other_mol in molecules
         if other_mol !== mol  # Avoid calculating force with itself
-            force = lennard_jones_force(mol.position, other_mol.position, epsilon, sigma)
+            force = lennard_jones_force(other_mol.position, mol.position, epsilon, sigma)
             total_force .+= force
         end
     end
@@ -88,7 +88,7 @@ function calculate_force_for_molecule(mol::Molecule, molecules::Vector{Molecule}
 
 end
 
-function calculate_system_temp(mols::Vector{Molecule})
+function calculate_system_temp(mols::Vector{Molecule})::Float64
     total_mv2::Float64 = 0.0
     # Calculate avg mv^2 for each frame
     for mol in mols
@@ -104,11 +104,11 @@ function calculate_system_temp(mols::Vector{Molecule})
         return 0.0
     end
 
-    print("Curr temp: ", res, " K\n")
+    # print("Curr temp: ", res, " K\n")
     return res
 end
 
-function rescale_velocities(mols::Vector{Molecule}, target_temp::Float64)
+function rescale_velocities(mols::Vector{Molecule}, target_temp::Float64)::Float64
     current_temp = calculate_system_temp(mols)
 
     rescale_factor = get_rescale_velocity_factor(current_temp, target_temp)
@@ -116,6 +116,8 @@ function rescale_velocities(mols::Vector{Molecule}, target_temp::Float64)
     for mol in mols
         mol.speed *= rescale_factor
     end
+
+    return current_temp
 end
 
 function get_rescale_velocity_factor(current_temp::Float64, target_temp::Float64)
@@ -166,7 +168,9 @@ function checkDomainBounds(mol::Molecule, domain::Domain)
 end
 
 
-function computePositions(mols::Vector{Molecule}, domain::Domain, dt::Float64, until::Float64, epsilon::Float64, sigma::Float64, target_temp::Float64=10.0)
+function computePositions(mols::Vector{Molecule}, domain::Domain, dt::Float64, until::Float64, epsilon::Float64, sigma::Float64, target_temp::Float64=10.0)::Vector{Float64}
+    temperatures = []
+    
     for t in 0:dt:until
         # Calculate forces for mols
         for mol in mols
@@ -180,14 +184,30 @@ function computePositions(mols::Vector{Molecule}, domain::Domain, dt::Float64, u
             checkDomainBounds(mol, domain)
         end
         # Velocity rescaling
-        rescale_velocities(mols, target_temp)
+        current_temp::Float64 = rescale_velocities(mols, target_temp)
+        push!(temperatures, current_temp)
     end
+
+    return temperatures
+end
+
+function generateTempGraph(temps::Vector{Float64}, delta_t::Float64, until::Float64, output_path::String="./out/temperature_graph.png")
+    timestamps = 0:delta_t:until
+    fig = Figure()
+    ax = Axis(
+        fig[1, 1], 
+        title="Temperature vs Time", 
+        xlabel="Time (s)", 
+        ylabel="Temperature (K)"
+    )
+    lines!(ax, timestamps, temps, color=:blue)
+    save(output_path, fig)
 end
 
 #endregion
 
 function generateSimulation(
-    domain::Domain, mols::Array{Molecule}, delta_t::Number, until::Number, framerate::Int, epsilon::Float64=1.0, sigma::Float64=1.0, target_temp=10.0;
+    domain::Domain, mols::Vector{Molecule}, delta_t::Number, until::Number, framerate::Int, epsilon::Float64=1.0, sigma::Float64=1.0, target_temp=10.0;
     framestep::Int=30, output_path::String="./out/2D_animation"
 )
     timestamps = 0:delta_t:until
@@ -199,13 +219,15 @@ function generateSimulation(
     # Observable containing time info
     T = Observable(0.0)
 
+    curr_temp = Observable(0.0)
+
     # Initial calculated temperature
     initial_temp = calculate_system_temp(mols)
     println("Initial temperature: $initial_temp K")
 
     @time "Time to generate positions" begin
         # Compute all positions for all molecules
-        computePositions(mols, domain, delta_t, until, epsilon, sigma, target_temp)
+        temperatures = computePositions(mols, domain, delta_t, until, epsilon, sigma, target_temp)
     end
 
     xlims = (domain.lims_x[1], domain.lims_x[2])
@@ -217,6 +239,7 @@ function generateSimulation(
         # perspectiveness = 0.5,
         # aspect=(aspect_x, aspect_y),
         title=@lift("t = $($T) s"),
+        subtitle=@lift("Tcurr = $($curr_temp) K"),
         limits=(xlims, ylims),
     )
 
@@ -228,6 +251,7 @@ function generateSimulation(
     @time "Time to generate video" record(fig, output_path * ".mp4", 1:framestep:total_frames; framerate=framerate) do f
         frame[] = f
         T[] = timestamps[f]
+        curr_temp[] = temperatures[f]
 
         xs = Float64[]
         ys = Float64[]
@@ -243,6 +267,8 @@ function generateSimulation(
     end
 
     println("Video saved in " * output_path * " ! :)")
+
+    generateTempGraph(temperatures, delta_t, until, "./out/temperature_graph.png")
 end
 
 #region Main
@@ -275,7 +301,7 @@ function main()
     )
 
     delta_t = 1 * 10^-15 # s
-    until = 1 * 10^-11 # s
+    until = 5 * 10^-11 # s
 
     num_mols = 100
     T = 40.0 # K
@@ -283,17 +309,17 @@ function main()
     epsilon = 4.91511044 * 10^-22 # J
 
 
-    mols::Array{Molecule} = []
+    mols::Vector{Molecule} = []
     mol_mass = 20.1797 * u
     for i in 1:num_mols
-        position = generate_random_positions(domain, mols, 1.5 * sigma)
+        position = generate_random_positions(domain, mols, 0.9 * sigma)
         speed = rand(Normal(0, sqrt(boltzmann_constant * T / mol_mass)), 2)
         push!(mols, Molecule(
             "Ne", mol_mass, 38 * 10^-12, position, speed, zeros(2), [], []
         ))
     end
 
-    generateSimulation(domain, mols, delta_t, until, 30, epsilon, sigma, T)
+    generateSimulation(domain, mols, delta_t, until, 30, epsilon, sigma, T; framestep=100)
 end
 #endregion
 
